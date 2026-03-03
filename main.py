@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
-import subprocess, tempfile, os, json, time
+import subprocess, tempfile, os, json
 
 app = FastAPI()
 
@@ -8,8 +8,8 @@ YT_DLP_BASE = [
     "yt-dlp",
     "--no-playlist",
     "--no-check-certificates",
-    "--extractor-args", "youtube:player_client=ios,web",
-    "--user-agent", "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)",
+    "--force-ipv4",
+    "--extractor-args", "youtube:player_client=mediaconnect",
 ]
 
 @app.get("/health")
@@ -29,7 +29,7 @@ async def extract(body: dict):
             capture_output=True, text=True, timeout=30
         )
         if info_result.returncode != 0:
-            raise HTTPException(500, f"yt-dlp info failed: {info_result.stderr[:300]}")
+            raise HTTPException(500, f"yt-dlp info failed: {info_result.stderr[:500]}")
 
         info = json.loads(info_result.stdout)
         title = info.get("title", "audio")
@@ -47,7 +47,11 @@ async def extract(body: dict):
             capture_output=True, text=True, timeout=120
         )
         if dl_result.returncode != 0:
-            raise HTTPException(500, f"yt-dlp download failed: {dl_result.stderr[:300]}")
+            raise HTTPException(500, f"yt-dlp download failed: {dl_result.stderr[:500]}")
+
+        if not os.path.exists(out_path):
+            files = os.listdir(tmp)
+            raise HTTPException(500, f"Output file not found. Files in tmp: {files}")
 
         with open(out_path, "rb") as f:
             data = f.read()
