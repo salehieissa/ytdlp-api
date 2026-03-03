@@ -9,13 +9,30 @@ YT_DLP_BASE = [
     "--no-playlist",
     "--no-check-certificates",
     "--force-ipv4",
-    "--extractor-args", "youtube:player_client=mediaconnect",
+    "--extractor-args", "youtube:player_client=tv,android_vr;player_skip=webpage",
 ]
 
 @app.get("/health")
 def health():
     v = subprocess.run(["yt-dlp", "--version"], capture_output=True, text=True)
     return {"ok": True, "ytdlp_version": v.stdout.strip()}
+
+@app.get("/test")
+def test():
+    """Quick diagnostic: try fetching info for a known video."""
+    result = subprocess.run(
+        YT_DLP_BASE + [
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "--dump-single-json", "--no-download",
+        ],
+        capture_output=True, text=True, timeout=30,
+    )
+    return {
+        "returncode": result.returncode,
+        "stdout_len": len(result.stdout),
+        "stderr": result.stderr[:1000],
+        "title": json.loads(result.stdout).get("title") if result.returncode == 0 else None,
+    }
 
 @app.post("/extract")
 async def extract(body: dict):
@@ -29,7 +46,7 @@ async def extract(body: dict):
             capture_output=True, text=True, timeout=30
         )
         if info_result.returncode != 0:
-            raise HTTPException(500, f"yt-dlp info failed: {info_result.stderr[:500]}")
+            raise HTTPException(500, f"yt-dlp info failed: {info_result.stderr[:800]}")
 
         info = json.loads(info_result.stdout)
         title = info.get("title", "audio")
@@ -47,7 +64,7 @@ async def extract(body: dict):
             capture_output=True, text=True, timeout=120
         )
         if dl_result.returncode != 0:
-            raise HTTPException(500, f"yt-dlp download failed: {dl_result.stderr[:500]}")
+            raise HTTPException(500, f"yt-dlp download failed: {dl_result.stderr[:800]}")
 
         if not os.path.exists(out_path):
             files = os.listdir(tmp)
