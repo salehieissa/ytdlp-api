@@ -1,12 +1,21 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
-import subprocess, tempfile, os, json
+import subprocess, tempfile, os, json, time
 
 app = FastAPI()
 
+YT_DLP_BASE = [
+    "yt-dlp",
+    "--no-playlist",
+    "--no-check-certificates",
+    "--extractor-args", "youtube:player_client=ios,web",
+    "--user-agent", "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)",
+]
+
 @app.get("/health")
 def health():
-    return {"ok": True}
+    v = subprocess.run(["yt-dlp", "--version"], capture_output=True, text=True)
+    return {"ok": True, "ytdlp_version": v.stdout.strip()}
 
 @app.post("/extract")
 async def extract(body: dict):
@@ -16,11 +25,11 @@ async def extract(body: dict):
 
     with tempfile.TemporaryDirectory() as tmp:
         info_result = subprocess.run(
-            ["yt-dlp", url, "--dump-single-json", "--no-download", "--no-playlist", "--no-check-certificates"],
-            capture_output=True, text=True, timeout=20
+            YT_DLP_BASE + [url, "--dump-single-json", "--no-download"],
+            capture_output=True, text=True, timeout=30
         )
         if info_result.returncode != 0:
-            raise HTTPException(500, f"yt-dlp info failed: {info_result.stderr[:200]}")
+            raise HTTPException(500, f"yt-dlp info failed: {info_result.stderr[:300]}")
 
         info = json.loads(info_result.stdout)
         title = info.get("title", "audio")
@@ -31,12 +40,14 @@ async def extract(body: dict):
 
         out_path = os.path.join(tmp, "audio.mp3")
         dl_result = subprocess.run(
-            ["yt-dlp", url, "-x", "--audio-format", "mp3", "--audio-quality", "5",
-             "-o", out_path, "--no-playlist", "--no-check-certificates"],
-            capture_output=True, text=True, timeout=60
+            YT_DLP_BASE + [
+                url, "-x", "--audio-format", "mp3", "--audio-quality", "5",
+                "-o", out_path
+            ],
+            capture_output=True, text=True, timeout=120
         )
         if dl_result.returncode != 0:
-            raise HTTPException(500, f"yt-dlp download failed: {dl_result.stderr[:200]}")
+            raise HTTPException(500, f"yt-dlp download failed: {dl_result.stderr[:300]}")
 
         with open(out_path, "rb") as f:
             data = f.read()
